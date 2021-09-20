@@ -129,16 +129,56 @@ impl Criterion for Geo<'_> {
 fn geo_point(
     rtree: &RTree<GeoPoint>,
     mut candidates: RoaringBitmap,
-    point: [f64; 2],
+    base_point: [f64; 2],
     ascending: bool,
 ) -> Box<dyn Iterator<Item = RoaringBitmap>> {
-    let mut results = Vec::new();
-    for point in rtree.nearest_neighbor_iter(&point) {
+    let mut results: Vec<RoaringBitmap> = Vec::new();
+    let km = 1000;
+    let thickness = [
+        100,
+        500,
+        1 * km,
+        10 * km,
+        20 * km,
+        50 * km,
+        100 * km,
+        200 * km,
+        500 * km,
+        1000 * km,
+        3000 * km,
+        10000 * km,
+        usize::MAX,
+    ];
+
+    let mut thickness = thickness.iter().scan(usize::MIN, |last, current| {
+        let res = *last..*current;
+        *last = *current;
+        Some(res)
+    });
+    let mut current_thickness = thickness.next().unwrap();
+
+    for point in rtree.nearest_neighbor_iter(&base_point) {
         if candidates.remove(point.data) {
-            results.push(std::iter::once(point.data).collect());
-            if candidates.is_empty() {
-                break;
+            let distance =
+                crate::distance_between_two_points(&base_point, point.geom()).round() as usize;
+            match results.as_slice() {
+                _ if !current_thickness.contains(&distance) => {
+                    results.push(std::iter::once(point.data).collect());
+                    // Since the last range goes to `usize::MAX` we are 100% sure we'll find something
+                    current_thickness =
+                        thickness.find(|current| current.contains(&distance)).unwrap();
+                }
+                [] if current_thickness.contains(&distance) => {
+                    results.push(std::iter::once(point.data).collect())
+                }
+                [_] | &[.., _] if current_thickness.contains(&distance) => {
+                    drop(results.last().as_mut().unwrap().insert(point.data))
+                }
             }
+        }
+        results.push(std::iter::once(point.data).collect());
+        if candidates.is_empty() {
+            break;
         }
     }
 
