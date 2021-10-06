@@ -135,6 +135,7 @@ fn geo_point(
     let mut results: Vec<RoaringBitmap> = Vec::new();
     let km = 1000;
     let thickness = [
+        usize::MIN,
         100,
         500,
         1 * km,
@@ -150,37 +151,30 @@ fn geo_point(
         usize::MAX,
     ];
 
-    let mut thickness = thickness.iter().scan(usize::MIN, |last, current| {
-        let res = *last..*current;
-        *last = *current;
-        Some(res)
-    });
+    let mut thickness = thickness.iter().map(|&range| usize::MIN..range);
     let mut current_thickness = thickness.next().unwrap();
 
     for point in rtree.nearest_neighbor_iter(&base_point) {
         if candidates.remove(point.data) {
             let distance =
                 crate::distance_between_two_points(&base_point, point.geom()).round() as usize;
-            match results.as_slice() {
-                _ if !current_thickness.contains(&distance) => {
-                    results.push(std::iter::once(point.data).collect());
-                    // Since the last range goes to `usize::MAX` we are 100% sure we'll find something
-                    current_thickness =
-                        thickness.find(|current| current.contains(&distance)).unwrap();
-                }
-                [] if current_thickness.contains(&distance) => {
-                    results.push(std::iter::once(point.data).collect())
-                }
-                [_] | &[.., _] if current_thickness.contains(&distance) => {
-                    drop(results.last().as_mut().unwrap().insert(point.data))
-                }
+            if !current_thickness.contains(&distance) {
+                results.push(std::iter::once(point.data).collect());
+                // Since the last range goes to `usize::MAX` we are 100% sure we'll find something
+                current_thickness =
+                    thickness.find(|current| dbg!(current).contains(&distance)).unwrap();
+            } else if results.is_empty() {
+                results.push(std::iter::once(point.data).collect());
+            } else {
+                results.last_mut().unwrap().insert(point.data);
             }
         }
-        results.push(std::iter::once(point.data).collect());
         if candidates.is_empty() {
             break;
         }
     }
+
+    dbg!(&results);
 
     if ascending {
         Box::new(results.into_iter())
