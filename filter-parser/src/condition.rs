@@ -20,6 +20,8 @@ pub enum Condition<'a> {
     Equal(Token<'a>),
     NotEqual(Token<'a>),
     LowerThan(Token<'a>),
+    Includes(Token<'a>),
+    NotIncludes(Token<'a>),
     LowerThanOrEqual(Token<'a>),
     Between { from: Token<'a>, to: Token<'a> },
 }
@@ -33,6 +35,8 @@ impl<'a> Condition<'a> {
             GreaterThanOrEqual(n) => (LowerThan(n), None),
             Equal(s) => (NotEqual(s), None),
             NotEqual(s) => (Equal(s), None),
+            Includes(s) => (NotIncludes(s), None),
+            NotIncludes(s) => (Includes(s), None),
             LowerThan(n) => (GreaterThanOrEqual(n), None),
             LowerThanOrEqual(n) => (GreaterThan(n), None),
             Between { from, to } => (LowerThan(from), Some(GreaterThan(to))),
@@ -42,7 +46,7 @@ impl<'a> Condition<'a> {
 
 /// condition      = value ("==" | ">" ...) value
 pub fn parse_condition(input: Span) -> IResult<FilterCondition> {
-    let operator = alt((tag("<="), tag(">="), tag("!="), tag("<"), tag(">"), tag("=")));
+    let operator = alt((tag("<="), tag(">="), tag("!="), tag("<"), tag(">"), tag("="), tag("*"), tag("!*")));
     let (input, (fid, op, value)) = tuple((parse_value, operator, cut(parse_value)))(input)?;
 
     let condition = match *op.fragment() {
@@ -52,6 +56,8 @@ pub fn parse_condition(input: Span) -> IResult<FilterCondition> {
         "<" => FilterCondition::Condition { fid, op: LowerThan(value) },
         ">" => FilterCondition::Condition { fid, op: GreaterThan(value) },
         "=" => FilterCondition::Condition { fid, op: Equal(value) },
+        "*" => FilterCondition::Condition { fid, op: Includes(value) },
+        "!*" => FilterCondition::Condition { fid, op: NotIncludes(value) },
         _ => unreachable!(),
     };
 

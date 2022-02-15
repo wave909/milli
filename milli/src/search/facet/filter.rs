@@ -306,6 +306,40 @@ impl<'a> Filter<'a> {
                 )?;
                 return Ok((all_numbers_ids | all_strings_ids) - docids);
             }
+            Condition::NotIncludes(val) => {
+                let mut iter = strings_db.iter(rtxn)?;
+                let mut result = RoaringBitmap::new();
+                loop {
+                    let cur = iter.next().transpose();
+                    match cur {
+                        Ok(Some(((fid,low_val),(data,docids)))) => {
+                            if !low_val.contains(&val.to_lowercase()) {
+                                for id in docids { result.insert(id); }
+                            }
+                        },
+                        Ok(None) => { break; },
+                        Err(E)=>{},
+                    }
+                }
+                return Ok(result);
+            }
+            Condition::Includes(val) => { //TODO add number includence?
+                let mut iter = strings_db.iter(rtxn)?;
+                let mut result = RoaringBitmap::new();
+                loop {
+                    let cur = iter.next().transpose();
+                    match cur {
+                        Ok(Some(((fid,low_val),(data,docids)))) => {
+                            if low_val.contains(&val.to_lowercase()) {
+                                for id in docids { result.insert(id); }
+                            }
+                        },
+                        Ok(None) => { break; },
+                        Err(E)=>{},
+                    }
+                }
+                return Ok(result);
+            }
         };
 
         // Ask for the biggest value that can exist for this specific field, if it exists
