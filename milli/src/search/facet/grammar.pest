@@ -11,11 +11,13 @@ char =  _{ !(PEEK | "\\") ~ ANY
 reserved = { "_geoDistance" | ("_geoPoint" ~ parameters) | "_geo" }
 // we deliberately choose to allow empty parameters to generate more specific error message later
 parameters = {("(" ~ (value ~ ",")* ~ value? ~ ")") | ""}
-condition = _{between | eq | greater | less | geq | leq | neq}
+condition = _{between | eq | greater | less | geq | leq | neq | incl | notincl}
 between = {key ~ value ~ "TO" ~ value}
 geq = {key ~ ">=" ~ value}
 leq = {key ~ "<=" ~ value}
 neq = {key ~ "!=" ~ value}
+incl = {key ~ "*" ~ value}
+notincl = {key ~ "!*" ~ value}
 eq = {key ~ "=" ~ value}
 greater = {key ~ ">" ~ value}
 less = {key ~ "<" ~ value}

@@ -30,6 +30,8 @@ pub enum Operator {
     GreaterThanOrEqual(f64),
     Equal(Option<f64>, String),
     NotEqual(Option<f64>, String),
+    Includes(Option<f64>, String),
+    NotIncludes(Option<f64>, String),
     LowerThan(f64),
     LowerThanOrEqual(f64),
     Between(f64, f64),
@@ -46,6 +48,8 @@ impl Operator {
             GreaterThanOrEqual(n) => (LowerThan(n), None),
             Equal(n, s) => (NotEqual(n, s), None),
             NotEqual(n, s) => (Equal(n, s), None),
+            Includes(n, s) => (NotIncludes(n,s), None),
+            NotIncludes(n, s) => (Includes(n,s), None),
             LowerThan(n) => (GreaterThanOrEqual(n), None),
             LowerThanOrEqual(n) => (GreaterThan(n), None),
             Between(n, m) => (LowerThan(n), Some(GreaterThan(m))),
@@ -132,6 +136,8 @@ impl FilterCondition {
                 Rule::geq => Ok(Self::greater_than_or_equal(fim, ff, pair)?),
                 Rule::eq => Ok(Self::equal(fim, ff, pair)?),
                 Rule::neq => Ok(Self::equal(fim, ff, pair)?.negate()),
+                Rule::incl => Ok(Self::incl(fim, ff, pair)?),
+                Rule::notincl => Ok(Self::incl(fim, ff, pair)?.negate()),
                 Rule::leq => Ok(Self::lower_than_or_equal(fim, ff, pair)?),
                 Rule::less => Ok(Self::lower_than(fim, ff, pair)?),
                 Rule::between => Ok(Self::between(fim, ff, pair)?),
@@ -254,6 +260,23 @@ impl FilterCondition {
 
         let svalue = svalue.to_lowercase();
         Ok(Operator(fid, Equal(result.ok(), svalue)))
+    }
+    fn incl(
+        fields_ids_map: &FieldsIdsMap,
+        filterable_fields: &HashSet<String>,
+        item: Pair<Rule>,
+    ) -> Result<FilterCondition> {
+        let mut items = item.into_inner();
+        let fid = match field_id(fields_ids_map, filterable_fields, &mut items)? {
+            Some(fid) => fid,
+            None => return Ok(Empty),
+        };
+
+        let value = items.next().unwrap();
+        let (result, svalue) = pest_parse(value);
+
+        let svalue = svalue.to_lowercase();
+        Ok(Operator(fid, Includes(result.ok(), svalue)))
     }
 
     fn greater_than(
@@ -452,6 +475,40 @@ impl FilterCondition {
         let (left, right) = match operator {
             GreaterThan(val) => (Excluded(*val), Included(f64::MAX)),
             GreaterThanOrEqual(val) => (Included(*val), Included(f64::MAX)),
+            NotIncludes(number,val) => {
+                let mut iter = strings_db.iter(rtxn)?;
+                let mut result = RoaringBitmap::new();
+                loop {
+                    let cur = iter.next().transpose();
+                    match cur {
+                        Ok(Some(((fid,low_val),(data,docids)))) => {
+                            if !low_val.contains(&val.to_lowercase()) {
+                                for id in docids { result.insert(id); }
+                            }
+                        },
+                        Ok(None) => { break; },
+                        Err(E)=>{},
+                    }
+                }
+                return Ok(result);
+            }
+            Includes(number,val) => { //TODO add number includence?
+                let mut iter = strings_db.iter(rtxn)?;
+                let mut result = RoaringBitmap::new();
+                loop {
+                    let cur = iter.next().transpose();
+                    match cur {
+                        Ok(Some(((fid,low_val),(data,docids)))) => {
+                            if low_val.contains(&val.to_lowercase()) {
+                                for id in docids { result.insert(id); }
+                            }
+                        },
+                        Ok(None) => { break; },
+                        Err(E)=>{},
+                    }
+                }
+                return Ok(result);
+            }
             Equal(number, string) => {
                 let (_original_value, string_docids) =
                     strings_db.get(rtxn, &(field_id, &string))?.unwrap_or_default();
